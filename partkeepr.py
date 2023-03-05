@@ -40,6 +40,9 @@ class PartKeepr:
     def get_parts(self):
         return self.get_paged("/api/parts")
     
+    def get_part(self, part_id):
+        return self.get("/api/parts/{}".format(part_id))
+    
     def get_manufacturers(self):
         return self.get_paged("/api/manufacturers")
     
@@ -69,3 +72,12 @@ class PartKeepr:
     
     def upload_temp_file_from_url(self, url):
         return self.create("/api/temp_uploaded_files/upload", {'url': url})
+    
+    def part_add_stock(self, part_id, quantity):
+        return self.update(part_id + "/addStock", {'quantity': quantity})
+    
+    def part_remove_stock(self, part_id, quantity):
+        return self.update(part_id + "/removeStock", {'quantity': quantity})
+    
+    def part_set_stock(self, part_id, quantity):
+        return self.update(part_id + "/setStock", {'quantity': quantity})
