@@ -43,11 +43,17 @@ class PartKeepr:
     def get_manufacturers(self):
         return self.get_paged("/api/manufacturers")
     
+    def get_storage_locations(self):
+        return self.get_paged("/api/storage_locations")
+    
     def create_manufacturer(self, manufacturer):
         return self.create("/api/manufacturers", manufacturer)
     
     def create_part_manufacturer(self, part_manufacturer):
         return self.create("/api/part_manufacturers", part_manufacturer)
+    
+    def create_storage_location(self, storage_location):
+        return self.create("/api/storage_locations", storage_location)
     
     def update_part(self, part):
         return self.update(part['@id'], part)

@@ -1,4 +1,5 @@
 import argparse
+import csv
 import time
 
 from pprint import pprint
@@ -10,7 +11,12 @@ from partkeepr import PartKeepr
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--action", type=str, required=True, choices=('sync-distributors', 'list-empty-part-mf'), help="Which action to perform")
+    parser.add_argument("-a", "--action", type=str, required=True, choices=('sync-distributors', 'list-empty-part-mf', 'update-locations-from-csv'), help="Which action to perform")
+    parser.add_argument("-f", "--force", action='store_true', help="Force certain actions")
+    parser.add_argument("--name-column", type=str, required=False, help="For CSV import: Name column name")
+    parser.add_argument("--location-column", type=str, required=False, help="For CSV import: Storage location column name")
+    parser.add_argument("--default-location", type=str, required=False, help="For CSV import: Default storage location if none is found")
+    parser.add_argument("--csv-file", type=str, required=False, help="For CSV import: CSV file name")
     args = parser.parse_args()
     
     pk = PartKeepr(PK_BASE_URL, PK_USERNAME, PK_PASSWORD)
@@ -145,6 +151,55 @@ def main():
         
         print("Parts without part manufacturers:")
         print("\n".join(empty_mf_parts))
+    elif args.action == 'update-locations-from-csv':
+        if not args.name_column or not args.location_column or not args.csv_file or not args.default_location:
+            print("Error: Missing parameters!")
+            return
+        
+        print("Getting parts")
+        parts = pk.get_parts()
+        part_indices_by_name = dict([(part['name'].lower(), index) for index, part in enumerate(parts)])
+        
+        print("Getting storage locations")
+        locations = pk.get_storage_locations()
+        location_ids_by_name = dict([(loc['name'].lower(), loc['@id']) for loc in locations])
+        
+        entries = []
+        with open(args.csv_file, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f, delimiter=',', quotechar='"')
+            for row in reader:
+                entries.append(row)
+        
+        for entry in entries:
+            name = entry[args.name_column]
+            location = entry[args.location_column]
+            if not location:
+                location = args.default_location
+            print("Processing {} located in {}".format(name, location))
+            
+            if name.lower() not in part_indices_by_name:
+                print("  Could not find part in database, skipping")
+                continue
+            
+            part_index = part_indices_by_name[name.lower()]
+            part = parts[part_index]
+            if part['storageLocation'] and not args.force:
+                print("  Part already has storage location assigned, skipping (use -f to override)")
+                continue
+            
+            if location.lower() in location_ids_by_name:
+                print("  Found location in database")
+                loc_id = location_ids_by_name[location.lower()]
+            else:
+                print("  Creating location")
+                loc_new = {'name': location, 'category': {'@id': "/api/storage_location_categories/1"}}
+                result = pk.create_storage_location(loc_new)
+                loc_id = result['@id']
+                location_ids_by_name[location.lower()] = loc_id
+            
+            print("  Updating part")
+            part['storageLocation'] = {'@id': loc_id}
+            result = pk.update_part(part)
             
 
 if __name__ == "__main__":
