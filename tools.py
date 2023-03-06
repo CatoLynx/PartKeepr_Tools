@@ -3,6 +3,7 @@ import code128
 import csv
 import time
 
+from collections import defaultdict
 from PIL import Image, ImageDraw, ImageFont
 from pprint import pprint
 
@@ -13,7 +14,7 @@ from partkeepr import PartKeepr
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--action", type=str, required=True, choices=('sync-distributors', 'list-empty-part-mf', 'update-locations-from-csv', 'generate-labels'), help="Which action to perform")
+    parser.add_argument("-a", "--action", type=str, required=True, choices=('sync-distributors', 'list-empty-part-mf', 'update-locations-from-csv', 'generate-labels', 'rename-from-params'), help="Which action to perform")
     parser.add_argument("-f", "--force", action='store_true', help="Force certain actions")
     parser.add_argument("--name-column", type=str, required=False, help="For CSV import: Name column name")
     parser.add_argument("--location-column", type=str, required=False, help="For CSV import: Storage location column name")
@@ -264,6 +265,8 @@ def main():
             draw.text((base_x, loc_area_y), "Location: {}".format(loc_name), 'black', font=font)
             
             for i, part in enumerate(sorted(parts, key=lambda p: p['@id'])):
+                barcode_text = "{}: {}".format(part['category']['name'], part['name'])
+                
                 part_id = part['@id'].split("/")[-1]
                 barcode_height = parts_area_region_height - round(args.font_size * 1.5)
                 barcode_thickness = avail_label_width // 100
@@ -275,13 +278,53 @@ def main():
                 
                 name_x = barcode_x
                 name_y = barcode_y + barcode_height + args.font_size * 0.1
-                draw.text((name_x, name_y), part['name'], 'black', font=font)
+                draw.text((name_x, name_y), barcode_text, 'black', font=font)
             
             labels.append(img)
         
         print("Generating PDF")
         labels[0].save(args.label_file, "PDF", resolution=args.label_dpi, save_all=True, append_images=labels[1:])
+    
+    elif args.action == 'rename-from-params':
+        print("Getting parts")
+        parts = pk.get_parts()
         
+        num_parts = len(parts)
+        for i, part in enumerate(parts):
+            print("  [{: 5d}/{: 5d}] Processing {}".format(i+1, num_parts, part['name']))
+            
+            new_name = ""
+            param_dict = defaultdict(lambda: "", [(p['name'], p['stringValue']) for p in part['parameters']])
+            
+            # The following code needs to be customized depensing on your organization.
+            # It handles generating short part descriptions to print
+            # instead of the part number for certain kinds of parts, like resistors.
+            category = part['category']['name']
+            if category in ["Resistors"]:
+                new_name = "{Number of resistors} {Resistance} {Tolerance} {Power} {Case - inch} {Mounting}".format_map(param_dict)
+            elif category in ["Ceramic Caps"]:
+                new_name = "{Capacitance} {Tolerance} {Operating voltage} {Dielectric} {Case - inch} {Mounting}".format_map(param_dict)
+            elif category in ["Electrolytic Caps"]:
+                new_name = "{Capacitance} {Tolerance} {Operating voltage} {Mounting}".format_map(param_dict)
+            elif category in ["Tantalum Caps"]:
+                new_name = "{Capacitance} {Tolerance} {Operating voltage} {Case} {Mounting}".format_map(param_dict)
+            elif category in ["Fuses"]:
+                new_name = "{Current rating} {Fuse characteristics} {Rated voltage} {Mounting}".format_map(param_dict)
+            new_name = " ".join(new_name.split())
+            
+            if not new_name.strip():
+                print("    Renaming would result in empty name, skipping")
+                continue
+            
+            if new_name == part['name']:
+                print("    Name unchanged, skipping")
+                continue
+            
+            accept = input("    Rename {} to {}? [Y/n] ".format(part['name'], new_name)).lower() in ("", "y")
+            if accept:
+                print("    Updating part")
+                part['name'] = new_name
+                result = pk.update_part(part)
 
 if __name__ == "__main__":
     main()
