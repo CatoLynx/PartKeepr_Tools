@@ -16,6 +16,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--action", type=str, required=True, choices=('sync-distributors', 'list-empty-part-mf', 'update-locations-from-csv', 'generate-labels', 'rename-from-params'), help="Which action to perform")
     parser.add_argument("-f", "--force", action='store_true', help="Force certain actions")
+    parser.add_argument("-o", "--offset", type=int, required=False, help="Offset into parts list (how many parts to skip)")
+    parser.add_argument("--id", type=int, required=False, help="Single part ID")
     parser.add_argument("--name-column", type=str, required=False, help="For CSV import: Name column name")
     parser.add_argument("--location-column", type=str, required=False, help="For CSV import: Storage location column name")
     parser.add_argument("--default-location", type=str, required=False, help="For CSV import: Default storage location if none is found")
@@ -32,11 +34,19 @@ def main():
     tme = TME(TME_APP_KEY, TME_APP_SECRET)
     
     if args.action == 'sync-distributors':
-        print("Getting parts")
-        parts = pk.get_parts()
+        if args.id:
+            print("Getting part")
+            parts = [pk.get_part(args.id)]
+        else:
+            print("Getting parts")
+            parts = pk.get_parts()
+        
         print("Getting manufacturers")
         manufacturers = pk.get_manufacturers()
         manufacturer_ids_by_name = dict([(mf['name'].lower(), mf['@id']) for mf in manufacturers])
+        
+        if args.offset:
+            parts = parts[args.offset:]
         
         num_parts = len(parts)
         for i, part in enumerate(parts):
@@ -167,8 +177,13 @@ def main():
             print("Error: Missing parameters!")
             return
         
-        print("Getting parts")
-        parts = pk.get_parts()
+        if args.id:
+            print("Getting part")
+            parts = [pk.get_part(args.id)]
+        else:
+            print("Getting parts")
+            parts = pk.get_parts()
+        
         part_indices_by_name = dict([(part['name'].lower(), index) for index, part in enumerate(parts)])
         
         print("Getting storage locations")
@@ -286,8 +301,12 @@ def main():
         labels[0].save(args.label_file, "PDF", resolution=args.label_dpi, save_all=True, append_images=labels[1:])
     
     elif args.action == 'rename-from-params':
-        print("Getting parts")
-        parts = pk.get_parts()
+        if args.id:
+            print("Getting part")
+            parts = [pk.get_part(args.id)]
+        else:
+            print("Getting parts")
+            parts = pk.get_parts()
         
         num_parts = len(parts)
         for i, part in enumerate(parts):
