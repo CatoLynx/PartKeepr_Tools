@@ -29,7 +29,7 @@ def main():
     current_action = ""
     current_value_digits = ""
     
-    display_timeout = 20
+    display_timeout = 120
     display_last_refresh = 0
     display_idle = True
     
@@ -57,7 +57,7 @@ def main():
                 display.display_multiline_text("{}\nSTOCK: {}".format(current_part['name'], current_part['stockLevel']))
                 display_last_refresh = time.time()
                 display_idle = False
-                display_timeout = 20
+                display_timeout = 120
         
         # A: Action
         elif code.startswith("A"):
@@ -72,7 +72,7 @@ def main():
                 display.display_multiline_text("{}\nACT: {} VAL: {}".format(current_part['name'], current_action, current_value_digits))
                 display_last_refresh = time.time()
                 display_idle = False
-                display_timeout = 20
+                display_timeout = 120
         
         # V: Value
         elif code.startswith("V"):
@@ -87,7 +87,7 @@ def main():
                 display.display_multiline_text("{}\nACT: {} VAL: {}".format(current_part['name'], current_action, current_value_digits))
                 display_last_refresh = time.time()
                 display_idle = False
-                display_timeout = 20
+                display_timeout = 120
         
         # C: Confirm
         elif code.startswith("C"):
