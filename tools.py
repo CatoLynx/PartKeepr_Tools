@@ -9,6 +9,7 @@ from pprint import pprint
 
 from secrets import *
 from tme import TME
+from mouser import Mouser
 from partkeepr import PartKeepr
 
 
@@ -57,7 +58,30 @@ def main():
                 part_data['photo_url'] = "https:" + part_data['photo_url']
             return part_data
         elif distributor == "Mouser":
-            pass
+            mouser_data = mouser.get_part_details(order_no)
+            if mouser_data['Errors']:
+                print("        Mouser Part Details API Error!")
+                pprint(mouser_data['Errors'])
+                return None
+            if mouser_data['SearchResults']['NumberOfResult'] == 0:
+                print("        Could not find part!")
+                return None
+            mouser_part = mouser_data['SearchResults']['Parts'][0]
+            
+            prices = []
+            for entry in mouser_part['PriceBreaks']:
+                price = float(entry['Price'].split()[0].replace(",", "."))
+                prices.append({'quantity': entry['Quantity'], 'price': price})
+            
+            part_data = {
+                'description': mouser_part['Description'],
+                'manufacturer': mouser_part['Manufacturer'],
+                'manufacturer_part_no': mouser_part['ManufacturerPartNumber'],
+                'photo_url': mouser_part.get('ImagePath'),
+                'parameters': None,
+                'prices': prices
+            }
+            return part_data
         elif distributor == "Digi-Key":
             pass
         return None
@@ -82,6 +106,7 @@ def main():
     
     pk = PartKeepr(PK_BASE_URL, PK_USERNAME, PK_PASSWORD)
     tme = TME(TME_APP_KEY, TME_APP_SECRET)
+    mouser = Mouser(MOUSER_API_KEY)
     
     if args.action == 'sync-distributors':
         if args.id:
