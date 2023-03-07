@@ -124,6 +124,7 @@ def main():
             parts = parts[args.offset:]
         
         num_parts = len(parts)
+        errors = []
         for i, part in enumerate(parts):
             print("  [{: 5d}/{: 5d}] Processing {}".format(i+1, num_parts, part['name']))
             
@@ -142,6 +143,7 @@ def main():
                 part_data = get_part_data(distributor_name, order_no)
                 if not part_data:
                     print("      Failed to get part data!")
+                    errors.append(part['name'])
                     continue
                     
                 # Update description
@@ -210,6 +212,10 @@ def main():
                 # Update part in database
                 result = pk.update_part(part)
             time.sleep(0.2) # To ensure we don't exceed 5 API calls per second
+        
+        if errors:
+            print("Parts with errors:")
+            print("\n".join(errors))
     
     elif args.action == 'list-empty-part-mf':
         print("Getting parts")
