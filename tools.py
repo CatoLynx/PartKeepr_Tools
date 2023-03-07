@@ -18,6 +18,7 @@ def main():
     parser.add_argument("-f", "--force", action='store_true', help="Force certain actions")
     parser.add_argument("-o", "--offset", type=int, required=False, help="Offset into parts list (how many parts to skip)")
     parser.add_argument("--id", type=int, required=False, help="Single part ID")
+    parser.add_argument("--location", type=str, required=False, help="Single storage location name")
     parser.add_argument("--name-column", type=str, required=False, help="For CSV import: Name column name")
     parser.add_argument("--location-column", type=str, required=False, help="For CSV import: Storage location column name")
     parser.add_argument("--default-location", type=str, required=False, help="For CSV import: Default storage location if none is found")
@@ -251,6 +252,9 @@ def main():
         labels = []
         font = ImageFont.truetype("LiberationSans-Regular.ttf", args.font_size)
         for loc_name, parts in sorted(parts_by_location.items(), key=lambda e: e[0]):
+            if args.location and loc_name.lower() != args.location.lower():
+                continue
+            
             if len(parts) > args.max_parts_per_label:
                 print("Skipping storage location {}: {} parts".format(loc_name, len(parts)))
                 continue
