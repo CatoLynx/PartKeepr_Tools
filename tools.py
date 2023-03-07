@@ -13,6 +13,55 @@ from partkeepr import PartKeepr
 
 
 def main():
+    SUPPORTED_DISTRIBUTORS = ["TME", "Mouser", "Digi-Key"]
+    def get_part_data(distributor, order_no):
+        if distributor == "TME":
+            tme_data = tme.get_part_details(order_no)
+            if 'Error' in tme_data:
+                print("        TME Part Details API Error: {}".format(tme_data['Status']))
+                return None
+            else:
+                tme_data = tme_data['Data']['ProductList'][0]
+            
+            tme_prices = tme.get_part_prices(order_no)
+            if 'Error' in tme_prices:
+                print("        TME Part Prices API Error: {}".format(tme_prices['Status']))
+                return None
+            else:
+                tme_prices = tme_prices['Data']['ProductList'][0]
+            
+            prices = []
+            for entry in tme_prices['PriceList']:
+                prices.append({'quantity': entry['Amount'], 'price': entry['PriceValue']})
+            
+            tme_parameters = tme.get_part_parameters(order_no)
+            if 'Error' in tme_parameters:
+                print("        TME Part Parameters API Error: {}".format(tme_parameters['Status']))
+                return None
+            else:
+                tme_parameters = tme_parameters['Data']['ProductList'][0]
+            
+            parameters = {}
+            for entry in tme_parameters['ParameterList']:
+                parameters[entry['ParameterName']] = entry['ParameterValue']
+            
+            part_data = {
+                'description': tme_data['Description'],
+                'manufacturer': tme_data['Producer'],
+                'manufacturer_part_no': tme_data['OriginalSymbol'] or tme_data['Symbol'],
+                'photo_url': tme_data.get('Photo'),
+                'parameters': parameters,
+                'prices': prices
+            }
+            if part_data['photo_url'].startswith("//"):
+                part_data['photo_url'] = "https:" + part_data['photo_url']
+            return part_data
+        elif distributor == "Mouser":
+            pass
+        elif distributor == "Digi-Key":
+            pass
+        return None
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--action", type=str, required=True, choices=('sync-distributors', 'list-empty-part-mf', 'update-locations-from-csv', 'generate-labels', 'rename-from-params'), help="Which action to perform")
     parser.add_argument("-f", "--force", action='store_true', help="Force certain actions")
@@ -58,105 +107,84 @@ def main():
             part_manufacturer_ids_by_name = dict([(mf['manufacturer']['name'].lower(), mf['@id']) for mf in part_manufacturers])
             
             for distributor in part_distributors:
-                print("    Processing distributor {}".format(distributor['distributor']['name']))
-                if distributor['distributor']['name'] == "TME":
-                    order_no = distributor['orderNumber']
-                    print("      Getting info from TME: {}".format(order_no))
+                distributor_name = distributor['distributor']['name']
+                if distributor_name not in SUPPORTED_DISTRIBUTORS:
+                    print("    Skipping distributor {}".format(distributor_name))
+                    continue
+                
+                print("    Processing distributor {}".format(distributor_name))
+                order_no = distributor['orderNumber']
+                part_data = get_part_data(distributor_name, order_no)
+                if not part_data:
+                    print("      Failed to get part data!")
+                    continue
                     
-                    tme_data = tme.get_part_details(order_no)
-                    if 'Error' in tme_data:
-                        print("        TME Part Details API Error: {}".format(tme_data['Status']))
-                        continue
-                    else:
-                        tme_data = tme_data['Data']['ProductList'][0]
-                        
-                    tme_prices = tme.get_part_prices(order_no)
-                    if 'Error' in tme_prices:
-                        print("        TME Part Prices API Error: {}".format(tme_prices['Status']))
-                        continue
-                    else:
-                        tme_prices = tme_prices['Data']['ProductList'][0]
-                    
-                    tme_params = tme.get_part_parameters(order_no)
-                    if 'Error' in tme_params:
-                        print("        TME Part Parameters API Error: {}".format(tme_params['Status']))
-                        continue
-                    else:
-                        tme_params = tme_params['Data']['ProductList'][0]
-                    
-                    tme_mf = tme_data['Producer']
-                    
-                    # Update description
+                # Update description
+                if part_data['description']:
                     print("        Updating description")
-                    part['description'] = tme_data['Description']
-                    result = pk.update_part(part)
-                    
-                    # Update manufacturer data if available
-                    if tme_mf:
-                        print("        Manufacturer: {}".format(tme_mf))
-                        if tme_mf.lower() in part_manufacturer_ids_by_name:
-                            print("        Found part manufacturer entry")
-                            part_mf_id = part_manufacturer_ids_by_name[tme_mf.lower()]
-                            for mf in part_manufacturers:
-                                if mf['@id'] == part_mf_id:
-                                    print("        Updating part manufacturer entry")
-                                    mf['partNumber'] = tme_data['OriginalSymbol'] or tme_data['Symbol']
-                                    result = pk.update_part_manufacturer(mf)
-                        else:
-                            if tme_mf.lower() in manufacturer_ids_by_name:
-                                print("        Found manufacturer in database")
-                                mf_id = manufacturer_ids_by_name[tme_mf.lower()]
-                            else:
-                                print("        Creating manufacturer entry")
-                                mf_new = {'name': tme_mf}
-                                result = pk.create_manufacturer(mf_new)
-                                mf_id = result['@id']
-                                manufacturer_ids_by_name[tme_mf.lower()] = mf_id
-                            print("        Creating part manufacturer entry")
-                            part_mf_new = {'manufacturer': {'@id': mf_id}, 'partNumber': tme_data['OriginalSymbol'] or tme_data['Symbol']}
-                            result = pk.create_part_manufacturer(part_mf_new)
-                            part_mf_id = result['@id']
-                            print("        Linking part manufacturer to part")
-                            part['manufacturers'].append({'@id': part_mf_id})
-                            result = pk.update_part(part)
+                    part['description'] = part_data['description']
+                
+                # Update manufacturer data if available
+                if part_data['manufacturer']:
+                    print("        Manufacturer: {}".format(part_data['manufacturer']))
+                    if part_data['manufacturer'].lower() in part_manufacturer_ids_by_name:
+                        print("        Found part manufacturer entry")
+                        part_mf_id = part_manufacturer_ids_by_name[part_data['manufacturer'].lower()]
+                        for mf in part_manufacturers:
+                            if mf['@id'] == part_mf_id:
+                                print("        Updating part manufacturer entry")
+                                mf['partNumber'] = part_data['manufacturer_part_no']
+                                result = pk.update_part_manufacturer(mf)
                     else:
-                        print("        No manufacturer found!")
-                    
-                    # Update pricing data
-                    if len(tme_prices['PriceList']) >= 1:
-                        new_price = tme_prices['PriceList'][0]['PriceValue'] # Always use lowest quantity group
-                        print("        Updating price from {} to {:.5f}".format(distributor['price'], new_price))
-                        distributor['price'] = new_price
-                        result = pk.update_part_distributor(distributor)
-                    
-                    # Update image if no image attachment is present and TME has a photo
-                    if not [a['isImage'] for a in part['attachments']] and tme_data.get('Photo'):
-                        print("        Updating photo")
-                        photo_url = tme_data['Photo']
-                        if photo_url.startswith("//"):
-                            photo_url = "https:" + photo_url
-                        result = pk.upload_temp_file_from_url(photo_url)
-                        file_id = result['image']['@id']
-                        part['attachments'].append({'@id': file_id})
-                        result = pk.update_part(part)
-                    
-                    # Update parameters
-                    # For now, all parameters are treated as text and the PartKeepr Unit system is not used.
-                    if len(tme_params['ParameterList']) >= 1:
-                        print("        Updating parameters")
-                        for param in tme_params['ParameterList']:
-                            param_name = param['ParameterName']
-                            param_value = param['ParameterValue']
-                            param_found = False
-                            for j, existing_param in enumerate(part['parameters']):
-                                if existing_param['name'] == param_name:
-                                    part['parameters'][j]['stringValue'] = param_value
-                                    param_found = True
-                                    break
-                            if not param_found:
-                                part['parameters'].append({'name': param_name, 'stringValue': param_value})
-                        result = pk.update_part(part)
-            time.sleep(0.2) # To ensure we don't exceed 5 TME API calls per second
+                        if part_data['manufacturer'].lower() in manufacturer_ids_by_name:
+                            print("        Found manufacturer in database")
+                            mf_id = manufacturer_ids_by_name[part_data['manufacturer'].lower()]
+                        else:
+                            print("        Creating manufacturer entry")
+                            mf_new = {'name': part_data['manufacturer']}
+                            result = pk.create_manufacturer(mf_new)
+                            mf_id = result['@id']
+                            manufacturer_ids_by_name[part_data['manufacturer'].lower()] = mf_id
+                        print("        Creating part manufacturer entry")
+                        part_mf_new = {'manufacturer': {'@id': mf_id}, 'partNumber': part_data['manufacturer_part_no']}
+                        result = pk.create_part_manufacturer(part_mf_new)
+                        part_mf_id = result['@id']
+                        print("        Linking part manufacturer to part")
+                        part['manufacturers'].append({'@id': part_mf_id})
+                else:
+                    print("        No manufacturer found!")
+                
+                # Update pricing data
+                if part_data['prices']:
+                    new_price = part_data['prices'][0]['price'] # Always use lowest quantity group
+                    print("        Updating price from {} to {:.5f}".format(distributor['price'], new_price))
+                    distributor['price'] = new_price
+                    result = pk.update_part_distributor(distributor)
+                
+                # Update image if no image attachment is present and distributor has a photo
+                if not [a['isImage'] for a in part['attachments']] and part_data['photo_url']:
+                    print("        Updating photo")
+                    result = pk.upload_temp_file_from_url(part_data['photo_url'])
+                    file_id = result['image']['@id']
+                    part['attachments'].append({'@id': file_id})
+                
+                # Update parameters
+                # For now, all parameters are treated as text and the PartKeepr Unit system is not used.
+                if part_data['parameters']:
+                    print("        Updating parameters")
+                    for param_name, param_value in part_data['parameters'].items():
+                        param_found = False
+                        for j, existing_param in enumerate(part['parameters']):
+                            if existing_param['name'] == param_name:
+                                part['parameters'][j]['stringValue'] = param_value
+                                param_found = True
+                                break
+                        if not param_found:
+                            part['parameters'].append({'name': param_name, 'stringValue': param_value})
+                
+                # Update part in database
+                result = pk.update_part(part)
+            time.sleep(0.2) # To ensure we don't exceed 5 API calls per second
     
     elif args.action == 'list-empty-part-mf':
         print("Getting parts")
