@@ -10,11 +10,12 @@ from pprint import pprint
 from secrets import *
 from tme import TME
 from mouser import Mouser
+from lcsc import LCSC
 from partkeepr import PartKeepr
 
 
 def main():
-    SUPPORTED_DISTRIBUTORS = ["TME", "Mouser", "Digi-Key"]
+    SUPPORTED_DISTRIBUTORS = ["TME", "Mouser", "Digi-Key", "LCSC"]
     def get_part_data(distributor, order_no):
         if distributor == "TME":
             tme_data = tme.get_part_details(order_no)
@@ -84,6 +85,34 @@ def main():
             return part_data
         elif distributor == "Digi-Key":
             pass
+        elif distributor == "LCSC":
+            lcsc_data = lcsc.get_part_details(order_no)
+            if lcsc_data['code'] != 200:
+                print("        LCSC Part Details API Error: {}".format(lcsc_data['msg']))
+                return None
+            if not lcsc_data['result']:
+                print("        Could not find part!")
+                return None
+            lcsc_part = lcsc_data['result']
+            
+            prices = []
+            for entry in lcsc_part['productPriceList']:
+                prices.append({'quantity': entry['ladder'], 'price': entry['currencyPrice']})
+            
+            lcsc_parameters = lcsc_part['paramVOList']
+            parameters = {}
+            for entry in lcsc_parameters:
+                parameters[entry['paramNameEn']] = entry['paramValueEn']
+            
+            part_data = {
+                'description': lcsc_part['productIntroEn'],
+                'manufacturer': lcsc_part['brandNameEn'],
+                'manufacturer_part_no': lcsc_part['productModel'],
+                'photo_url': lcsc_part['productImages'][0] if lcsc_part['productImages'] else None,
+                'parameters': parameters,
+                'prices': prices
+            }
+            return part_data
         return None
     
     parser = argparse.ArgumentParser()
@@ -107,6 +136,7 @@ def main():
     pk = PartKeepr(PK_BASE_URL, PK_USERNAME, PK_PASSWORD)
     tme = TME(TME_APP_KEY, TME_APP_SECRET)
     mouser = Mouser(MOUSER_API_KEY)
+    lcsc = LCSC()
     
     if args.action == 'sync-distributors':
         if args.id:
