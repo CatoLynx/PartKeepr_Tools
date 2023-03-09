@@ -1,0 +1,8 @@
+certifi==2022.12.7
+charset-normalizer==3.0.1
+code128==0.3
+idna==3.4
+Pillow==9.4.0
+pyserial==3.5
+requests==2.28.2
+urllib3==1.26.14
