@@ -211,7 +211,8 @@ class BarcodeClient:
                                 'distributor': {
                                     '@id': dist_id
                                 },
-                                'price': "0.00000"
+                                'price': "0.00000",
+                                'orderNumber': self.current_order_no
                             }
                             part_distributor = self.pk.create_part_distributor(part_distributor_new)
                             if '@id' not in part_distributor:
