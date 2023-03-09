@@ -11,6 +11,7 @@ Features include:
 * Importing location entries from a CSV file (for some reason I could not get the integrated import to work, so I made this)
 * Auto-generate labels with Code128 barcodes for every storage location
 * Rename components based on their parameters (e.g. rename a resistor from its part number to a human-readable name like 100Ω 0.1W 0603)
+* Scanning distributor order number barcodes and auto-creating new part entries based on the data from the distributor's API
 
 ## Barcode Client
 Also included is a tool that handles scanning the auto-generated barcodes mentioned above and allows simple stock modification by scanning control barcodes (See management_barcodes.pdf).
