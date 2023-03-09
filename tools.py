@@ -1,6 +1,9 @@
 import argparse
 import code128
 import csv
+import io
+import os
+import requests
 import time
 
 from collections import defaultdict
@@ -10,12 +13,14 @@ from pprint import pprint
 from secrets import *
 from tme import TME
 from mouser import Mouser
+from digikey import DigiKey
 from lcsc import LCSC
 from partkeepr import PartKeepr
 
 
 def main():
     SUPPORTED_DISTRIBUTORS = ["TME", "Mouser", "Digi-Key", "LCSC"]
+    
     def get_part_data(distributor, order_no):
         if distributor == "TME":
             tme_data = tme.get_part_details(order_no)
@@ -51,12 +56,12 @@ def main():
                 'description': tme_data['Description'],
                 'manufacturer': tme_data['Producer'],
                 'manufacturer_part_no': tme_data['OriginalSymbol'] or tme_data['Symbol'],
-                'photo_url': tme_data.get('Photo'),
+                'photo': tme_data.get('Photo'),
                 'parameters': parameters,
                 'prices': prices
             }
-            if part_data['photo_url'].startswith("//"):
-                part_data['photo_url'] = "https:" + part_data['photo_url']
+            if part_data['photo'].startswith("//"):
+                part_data['photo'] = "https:" + part_data['photo']
             return part_data
         elif distributor == "Mouser":
             mouser_data = mouser.get_part_details(order_no)
@@ -78,13 +83,45 @@ def main():
                 'description': mouser_part['Description'],
                 'manufacturer': mouser_part['Manufacturer'],
                 'manufacturer_part_no': mouser_part['ManufacturerPartNumber'],
-                'photo_url': mouser_part.get('ImagePath'),
+                'photo': mouser_part.get('ImagePath'),
                 'parameters': None,
                 'prices': prices
             }
             return part_data
         elif distributor == "Digi-Key":
-            pass
+            digikey_data = digikey.get_part_details(order_no)
+            if 'ErrorMessage' in digikey_data:
+                print("        Digi-Key Part Details API Error: {}".format(digikey_data['ErrorMessage']))
+                return None
+            
+            prices = []
+            for entry in digikey_data['StandardPricing']:
+                prices.append({'quantity': entry['BreakQuantity'], 'price': entry['UnitPrice']})
+            
+            digikey_parameters = digikey_data['Parameters']
+            parameters = {}
+            for entry in digikey_parameters:
+                parameters[entry['Parameter']] = entry['Value']
+            
+            part_data = {
+                'description': digikey_data['ProductDescription'],
+                'manufacturer': digikey_data['Manufacturer']['Value'],
+                'manufacturer_part_no': digikey_data['ManufacturerPartNumber'],
+                'photo': None,
+                'parameters': parameters,
+                'prices': prices
+            }
+            
+            # For some reason, with Digi-Key, PartKeepr only downloads a "Access Denied" page instead of the photo
+            # so we download it ourselves
+            if 'PrimaryPhoto' in digikey_data:
+                url = digikey_data['PrimaryPhoto']
+                filename = url.split("/")[-1]
+                with open(filename, 'wb') as f:
+                    f.write(requests.get(url).content)
+                part_data['photo'] = open(filename, 'rb')
+            
+            return part_data
         elif distributor == "LCSC":
             lcsc_data = lcsc.get_part_details(order_no)
             if lcsc_data['code'] != 200:
@@ -101,14 +138,15 @@ def main():
             
             lcsc_parameters = lcsc_part['paramVOList']
             parameters = {}
-            for entry in lcsc_parameters:
-                parameters[entry['paramNameEn']] = entry['paramValueEn']
+            if lcsc_parameters:
+                for entry in lcsc_parameters:
+                    parameters[entry['paramNameEn']] = entry['paramValueEn']
             
             part_data = {
                 'description': lcsc_part['productIntroEn'],
                 'manufacturer': lcsc_part['brandNameEn'],
                 'manufacturer_part_no': lcsc_part['productModel'],
-                'photo_url': lcsc_part['productImages'][0] if lcsc_part['productImages'] else None,
+                'photo': lcsc_part['productImages'][0] if lcsc_part['productImages'] else None,
                 'parameters': parameters,
                 'prices': prices
             }
@@ -136,6 +174,7 @@ def main():
     pk = PartKeepr(PK_BASE_URL, PK_USERNAME, PK_PASSWORD)
     tme = TME(TME_APP_KEY, TME_APP_SECRET)
     mouser = Mouser(MOUSER_API_KEY)
+    digikey = DigiKey(DIGIKEY_CLIENT_ID, DIGIKEY_CLIENT_SECRET)
     lcsc = LCSC()
     
     if args.action == 'sync-distributors':
@@ -219,9 +258,14 @@ def main():
                     result = pk.update_part_distributor(distributor)
                 
                 # Update image if no image attachment is present and distributor has a photo
-                if not [a['isImage'] for a in part['attachments']] and part_data['photo_url']:
+                if not [a['isImage'] for a in part['attachments']] and part_data['photo']:
                     print("        Updating photo")
-                    result = pk.upload_temp_file_from_url(part_data['photo_url'])
+                    if isinstance(part_data['photo'], io.IOBase):
+                        result = pk.upload_temp_file(part_data['photo'])
+                        part_data['photo'].close()
+                        os.remove(part_data['photo'].name)
+                    else:
+                        result = pk.upload_temp_file_from_url(part_data['photo'])
                     file_id = result['image']['@id']
                     part['attachments'].append({'@id': file_id})
                 

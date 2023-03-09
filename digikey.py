@@ -39,7 +39,6 @@ class DigiKey:
                 'grant_type': 'authorization_code'
             }
             response = requests.post(self.base_url + "/v1/oauth2/token", data=data).json()
-            pprint(response)
             if 'access_token' in response:
                 self.auth_data = {
                     'access_token': response['access_token'],
@@ -60,7 +59,6 @@ class DigiKey:
             'grant_type': 'refresh_token'
         }
         response = requests.post(self.base_url + "/v1/oauth2/token", data=data).json()
-        pprint(response)
         if 'access_token' in response:
             self.auth_data = {
                 'access_token': response['access_token'],
@@ -73,23 +71,23 @@ class DigiKey:
             return self.authorize(force_reauth=True)
         return False
     
-    def api_call(self, url, data, retry=True):
+    def api_call(self, url, data=None, retry=True):
         if not self.auth_data:
             success = self.authorize()
             if not success:
                 return None
         
         headers = {
+            'accept': 'application/json',
             'Authorization': "Bearer {}".format(self.auth_data['access_token']),
             'X-DIGIKEY-Client-Id': self.client_id,
             'X-DIGIKEY-Locale-Site': 'DE',
             'X-DIGIKEY-Locale-Language': 'en',
             'X-DIGIKEY-Locale-Currency': 'EUR',
-            'X-DIGIKEY-Locale-ShipToCountry': 'de',
             'X-DIGIKEY-Customer-Id': "0",
         }
-        response = requests.post(self.base_url + url, headers=headers, data=data).json()
-        if 'ErrorMessage' in response and response['ErrorMessage'] == "The Bearer token is invalid":
+        response = requests.get(self.base_url + url, headers=headers, data=data).json()
+        if 'ErrorMessage' in response and response['ErrorMessage'] in ("Bearer token  expired", "The Bearer token is invalid"):
             success = self.refresh_access_token()
             if not success:
                 print("Failed to refresh Digi-Key Access Token!")
@@ -101,7 +99,4 @@ class DigiKey:
             return response
     
     def get_part_details(self, order_no):
-        full_url = self.base_url + "/wmsc/product/detail"
-        url_params = {'productCode': order_no}
-        cookies = {'currencyCode': "EUR"}
-        return requests.get(full_url, params=url_params, cookies=cookies).json()
+        return self.api_call("/Search/v3/Products/{}".format(order_no))
