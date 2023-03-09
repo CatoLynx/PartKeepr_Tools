@@ -1,9 +1,6 @@
 import argparse
 import code128
 import csv
-import io
-import os
-import requests
 import time
 
 from collections import defaultdict
@@ -16,143 +13,10 @@ from mouser import Mouser
 from digikey import DigiKey
 from lcsc import LCSC
 from partkeepr import PartKeepr
+from distributor_common import SUPPORTED_DISTRIBUTORS, get_part_data
 
 
 def main():
-    SUPPORTED_DISTRIBUTORS = ["TME", "Mouser", "Digi-Key", "LCSC"]
-    
-    def get_part_data(distributor, order_no):
-        if distributor == "TME":
-            tme_data = tme.get_part_details(order_no)
-            if 'Error' in tme_data:
-                print("        TME Part Details API Error: {}".format(tme_data['Status']))
-                return None
-            else:
-                tme_data = tme_data['Data']['ProductList'][0]
-            
-            tme_prices = tme.get_part_prices(order_no)
-            if 'Error' in tme_prices:
-                print("        TME Part Prices API Error: {}".format(tme_prices['Status']))
-                return None
-            else:
-                tme_prices = tme_prices['Data']['ProductList'][0]
-            
-            prices = []
-            for entry in tme_prices['PriceList']:
-                prices.append({'quantity': entry['Amount'], 'price': entry['PriceValue']})
-            
-            tme_parameters = tme.get_part_parameters(order_no)
-            if 'Error' in tme_parameters:
-                print("        TME Part Parameters API Error: {}".format(tme_parameters['Status']))
-                return None
-            else:
-                tme_parameters = tme_parameters['Data']['ProductList'][0]
-            
-            parameters = {}
-            for entry in tme_parameters['ParameterList']:
-                parameters[entry['ParameterName']] = entry['ParameterValue']
-            
-            part_data = {
-                'description': tme_data['Description'],
-                'manufacturer': tme_data['Producer'],
-                'manufacturer_part_no': tme_data['OriginalSymbol'] or tme_data['Symbol'],
-                'photo': tme_data.get('Photo'),
-                'parameters': parameters,
-                'prices': prices
-            }
-            if part_data['photo'].startswith("//"):
-                part_data['photo'] = "https:" + part_data['photo']
-            return part_data
-        elif distributor == "Mouser":
-            mouser_data = mouser.get_part_details(order_no)
-            if mouser_data['Errors']:
-                print("        Mouser Part Details API Error!")
-                pprint(mouser_data['Errors'])
-                return None
-            if mouser_data['SearchResults']['NumberOfResult'] == 0:
-                print("        Could not find part!")
-                return None
-            mouser_part = mouser_data['SearchResults']['Parts'][0]
-            
-            prices = []
-            for entry in mouser_part['PriceBreaks']:
-                price = float(entry['Price'].split()[0].replace(",", "."))
-                prices.append({'quantity': entry['Quantity'], 'price': price})
-            
-            part_data = {
-                'description': mouser_part['Description'],
-                'manufacturer': mouser_part['Manufacturer'],
-                'manufacturer_part_no': mouser_part['ManufacturerPartNumber'],
-                'photo': mouser_part.get('ImagePath'),
-                'parameters': None,
-                'prices': prices
-            }
-            return part_data
-        elif distributor == "Digi-Key":
-            digikey_data = digikey.get_part_details(order_no)
-            if 'ErrorMessage' in digikey_data:
-                print("        Digi-Key Part Details API Error: {}".format(digikey_data['ErrorMessage']))
-                return None
-            
-            prices = []
-            for entry in digikey_data['StandardPricing']:
-                prices.append({'quantity': entry['BreakQuantity'], 'price': entry['UnitPrice']})
-            
-            digikey_parameters = digikey_data['Parameters']
-            parameters = {}
-            for entry in digikey_parameters:
-                parameters[entry['Parameter']] = entry['Value']
-            
-            part_data = {
-                'description': digikey_data['ProductDescription'],
-                'manufacturer': digikey_data['Manufacturer']['Value'],
-                'manufacturer_part_no': digikey_data['ManufacturerPartNumber'],
-                'photo': None,
-                'parameters': parameters,
-                'prices': prices
-            }
-            
-            # For some reason, with Digi-Key, PartKeepr only downloads a "Access Denied" page instead of the photo
-            # so we download it ourselves
-            if 'PrimaryPhoto' in digikey_data:
-                url = digikey_data['PrimaryPhoto']
-                filename = url.split("/")[-1]
-                with open(filename, 'wb') as f:
-                    f.write(requests.get(url).content)
-                part_data['photo'] = open(filename, 'rb')
-            
-            return part_data
-        elif distributor == "LCSC":
-            lcsc_data = lcsc.get_part_details(order_no)
-            if lcsc_data['code'] != 200:
-                print("        LCSC Part Details API Error: {}".format(lcsc_data['msg']))
-                return None
-            if not lcsc_data['result']:
-                print("        Could not find part!")
-                return None
-            lcsc_part = lcsc_data['result']
-            
-            prices = []
-            for entry in lcsc_part['productPriceList']:
-                prices.append({'quantity': entry['ladder'], 'price': entry['currencyPrice']})
-            
-            lcsc_parameters = lcsc_part['paramVOList']
-            parameters = {}
-            if lcsc_parameters:
-                for entry in lcsc_parameters:
-                    parameters[entry['paramNameEn']] = entry['paramValueEn']
-            
-            part_data = {
-                'description': lcsc_part['productIntroEn'],
-                'manufacturer': lcsc_part['brandNameEn'],
-                'manufacturer_part_no': lcsc_part['productModel'],
-                'photo': lcsc_part['productImages'][0] if lcsc_part['productImages'] else None,
-                'parameters': parameters,
-                'prices': prices
-            }
-            return part_data
-        return None
-    
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--action", type=str, required=True, choices=('sync-distributors', 'list-empty-part-mf', 'update-locations-from-csv', 'generate-labels', 'rename-from-params'), help="Which action to perform")
     parser.add_argument("-f", "--force", action='store_true', help="Force certain actions")
@@ -203,7 +67,7 @@ def main():
             
             for distributor in part_distributors:
                 distributor_name = distributor['distributor']['name']
-                if distributor_name not in SUPPORTED_DISTRIBUTORS:
+                if distributor_name not in SUPPORTED_DISTRIBUTORS.values():
                     print("    Skipping distributor {}".format(distributor_name))
                     continue
                 
@@ -214,77 +78,7 @@ def main():
                     print("      Failed to get part data!")
                     errors.append(part['name'])
                     continue
-                    
-                # Update description
-                if part_data['description']:
-                    print("        Updating description")
-                    part['description'] = part_data['description']
-                
-                # Update manufacturer data if available
-                if part_data['manufacturer']:
-                    print("        Manufacturer: {}".format(part_data['manufacturer']))
-                    if part_data['manufacturer'].lower() in part_manufacturer_ids_by_name:
-                        print("        Found part manufacturer entry")
-                        part_mf_id = part_manufacturer_ids_by_name[part_data['manufacturer'].lower()]
-                        for mf in part_manufacturers:
-                            if mf['@id'] == part_mf_id:
-                                print("        Updating part manufacturer entry")
-                                mf['partNumber'] = part_data['manufacturer_part_no']
-                                result = pk.update_part_manufacturer(mf)
-                    else:
-                        if part_data['manufacturer'].lower() in manufacturer_ids_by_name:
-                            print("        Found manufacturer in database")
-                            mf_id = manufacturer_ids_by_name[part_data['manufacturer'].lower()]
-                        else:
-                            print("        Creating manufacturer entry")
-                            mf_new = {'name': part_data['manufacturer']}
-                            result = pk.create_manufacturer(mf_new)
-                            mf_id = result['@id']
-                            manufacturer_ids_by_name[part_data['manufacturer'].lower()] = mf_id
-                        print("        Creating part manufacturer entry")
-                        part_mf_new = {'manufacturer': {'@id': mf_id}, 'partNumber': part_data['manufacturer_part_no']}
-                        result = pk.create_part_manufacturer(part_mf_new)
-                        part_mf_id = result['@id']
-                        print("        Linking part manufacturer to part")
-                        part['manufacturers'].append({'@id': part_mf_id})
-                else:
-                    print("        No manufacturer found!")
-                
-                # Update pricing data
-                if part_data['prices']:
-                    new_price = part_data['prices'][0]['price'] # Always use lowest quantity group
-                    print("        Updating price from {} to {:.5f}".format(distributor['price'], new_price))
-                    distributor['price'] = new_price
-                    result = pk.update_part_distributor(distributor)
-                
-                # Update image if no image attachment is present and distributor has a photo
-                if not [a['isImage'] for a in part['attachments']] and part_data['photo']:
-                    print("        Updating photo")
-                    if isinstance(part_data['photo'], io.IOBase):
-                        result = pk.upload_temp_file(part_data['photo'])
-                        part_data['photo'].close()
-                        os.remove(part_data['photo'].name)
-                    else:
-                        result = pk.upload_temp_file_from_url(part_data['photo'])
-                    file_id = result['image']['@id']
-                    part['attachments'].append({'@id': file_id})
-                
-                # Update parameters
-                # For now, all parameters are treated as text and the PartKeepr Unit system is not used.
-                if part_data['parameters']:
-                    print("        Updating parameters")
-                    for param_name, param_value in part_data['parameters'].items():
-                        param_found = False
-                        for j, existing_param in enumerate(part['parameters']):
-                            if existing_param['name'] == param_name:
-                                part['parameters'][j]['stringValue'] = param_value
-                                param_found = True
-                                break
-                        if not param_found:
-                            part['parameters'].append({'name': param_name, 'stringValue': param_value})
-                
-                # Update part in database
-                result = pk.update_part(part)
+                part = pk.update_part_data(part, part_data, distributor, manufacturer_ids_by_name)
             time.sleep(0.2) # To ensure we don't exceed 5 API calls per second
         
         if errors:
