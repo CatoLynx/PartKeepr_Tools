@@ -73,7 +73,7 @@ def main():
                 
                 print("    Processing distributor {}".format(distributor_name))
                 order_no = distributor['orderNumber']
-                part_data = get_part_data(distributor_name, order_no)
+                part_data = get_part_data(distributor_name, order_no, tme, mouser, digikey, lcsc)
                 if not part_data:
                     print("      Failed to get part data!")
                     errors.append(part['name'])
