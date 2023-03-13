@@ -58,6 +58,9 @@ class PartKeepr:
     def get_storage_locations(self):
         return self.get_paged("/api/storage_locations")
     
+    def get_project(self, project_id):
+        return self.get("/api/projects/{}".format(project_id))
+    
     def create_part(self, part):
         return self.create("/api/parts", part)
     
@@ -73,6 +76,9 @@ class PartKeepr:
     def create_storage_location(self, storage_location):
         return self.create("/api/storage_locations", storage_location)
     
+    def create_project_part(self, project_part):
+        return self.create("/api/project_parts", project_part)
+    
     def update_part(self, part):
         return self.update(part['@id'], part)
     
@@ -81,6 +87,9 @@ class PartKeepr:
     
     def update_part_distributor(self, part_distributor):
         return self.update(part_distributor['@id'], part_distributor)
+    
+    def update_project(self, project):
+        return self.update(project['@id'], project)
     
     def upload_temp_file(self, file):
         return self.upload("/api/temp_uploaded_files/upload", {'userfile': file})

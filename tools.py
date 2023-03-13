@@ -18,7 +18,7 @@ from distributor_common import SUPPORTED_DISTRIBUTORS, get_part_data
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--action", type=str, required=True, choices=('sync-distributors', 'list-empty-part-mf', 'update-locations-from-csv', 'generate-labels', 'rename-from-params'), help="Which action to perform")
+    parser.add_argument("-a", "--action", type=str, required=True, choices=('sync-distributors', 'list-empty-part-mf', 'update-locations-from-csv', 'generate-labels', 'rename-from-params', 'update-project-from-csv', 'check-stock-from-csv'), help="Which action to perform")
     parser.add_argument("-f", "--force", action='store_true', help="Force certain actions")
     parser.add_argument("-o", "--offset", type=int, required=False, help="Offset into parts list (how many parts to skip)")
     parser.add_argument("--id", type=int, required=False, help="Single part ID")
@@ -26,6 +26,9 @@ def main():
     parser.add_argument("--name-column", type=str, required=False, help="For CSV import: Name column name")
     parser.add_argument("--location-column", type=str, required=False, help="For CSV import: Storage location column name")
     parser.add_argument("--default-location", type=str, required=False, help="For CSV import: Default storage location if none is found")
+    parser.add_argument("--order-no-column", type=str, required=False, help="For CSV import: Order number column name")
+    parser.add_argument("--qty-column", type=str, required=False, help="For CSV import: Quantity column name")
+    parser.add_argument("--refs-column", type=str, required=False, help="For CSV import: References column name")
     parser.add_argument("--csv-file", type=str, required=False, help="For CSV import: CSV file name")
     parser.add_argument("--label-width", type=int, required=False, help="For label generation: Label width in millimeters")
     parser.add_argument("--label-height", type=int, required=False, help="For label generation: Label height in millimeters")
@@ -33,6 +36,8 @@ def main():
     parser.add_argument("--font-size", type=int, required=False, help="For label generation: Font size")
     parser.add_argument("--max-parts-per-label", type=int, required=False, help="For label generation: Only generate label for maximum of n parts")
     parser.add_argument("--label-file", type=str, required=False, help="For label generation: Label PDF file name")
+    parser.add_argument("--project-id", type=int, required=False, help="For project CSV import: Internal project ID (integer)")
+    parser.add_argument("--num-boards", type=int, required=False, help="For stock check: Desired number of boards")
     args = parser.parse_args()
     
     pk = PartKeepr(PK_BASE_URL, PK_USERNAME, PK_PASSWORD)
@@ -275,6 +280,130 @@ def main():
                 print("    Updating part")
                 part['name'] = new_name
                 result = pk.update_part(part)
+    
+    elif args.action == 'update-project-from-csv':
+        if not args.order_no_column or not args.qty_column or not args.refs_column or not args.csv_file or not args.project_id:
+            print("Error: Missing parameters!")
+            return
+        
+        print("Getting project")
+        project = pk.get_project(args.project_id)
+        
+        print("Getting parts")
+        parts = pk.get_parts()
+        
+        part_indices_by_order_no = {}
+        for index, part in enumerate(parts):
+            if part['distributors']:
+                for distributor in part['distributors']:
+                    part_indices_by_order_no[distributor['orderNumber']] = index
+        
+        entries = []
+        with open(args.csv_file, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f, delimiter=',', quotechar='"')
+            for row in reader:
+                entries.append(row)
+        
+        for entry in entries:
+            order_no = entry[args.order_no_column]
+            qty = int(entry[args.qty_column])
+            refs = entry[args.refs_column]
+            print("Processing {} ({})".format(order_no, refs))
+            
+            if order_no not in part_indices_by_order_no:
+                print("  Could not find part in database, skipping")
+                continue
+            
+            part_index = part_indices_by_order_no[order_no]
+            part = parts[part_index]
+            
+            project['parts'].append({
+                'part': {
+                    '@id': part['@id']
+                },
+                'quantity': qty,
+                'remarks': refs,
+                'overageType': 'absolute',
+                'overage': 0
+            })
+        print("Updating project")
+        result = pk.update_project(project)
+    
+    elif args.action == 'check-stock-from-csv':
+        if not args.order_no_column or not args.qty_column or not args.csv_file or not args.num_boards:
+            print("Error: Missing parameters!")
+            return
+        
+        print("Getting parts")
+        parts = pk.get_parts()
+        
+        part_indices_by_order_no = {}
+        for index, part in enumerate(parts):
+            if part['distributors']:
+                for distributor in part['distributors']:
+                    part_indices_by_order_no[distributor['orderNumber']] = index
+        
+        entries = []
+        with open(args.csv_file, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f, delimiter=',', quotechar='"')
+            for row in reader:
+                entries.append(row)
+        
+        parts_status = {}
+        for entry in entries:
+            order_no = entry[args.order_no_column]
+            qty = args.num_boards * int(entry[args.qty_column])
+            print("Processing {}".format(order_no))
+            
+            if order_no not in part_indices_by_order_no:
+                print("  Could not find part in database, skipping")
+                parts_status[order_no] = {
+                    'status': 'missing',
+                    'distributor': None,
+                    'stock': 0,
+                    'needed': qty,
+                    'status_text': "Order {}".format(qty)
+                }
+                continue
+            
+            part_index = part_indices_by_order_no[order_no]
+            part = parts[part_index]
+            
+            print("  Stock:    {}".format(part['stockLevel']))
+            print("  Required: {}".format(qty))
+            
+            distributor_name = ""
+            for distributor in part['distributors']:
+                if distributor['orderNumber'] == order_no:
+                    distributor_name = distributor['distributor']['name']
+                
+            if order_no not in parts_status:
+                parts_status[order_no] = {
+                    'distributor': distributor_name,
+                    'stock': part['stockLevel'],
+                    'needed': qty
+                }
+            else:
+                parts_status[order_no]['needed'] += qty
+            
+            if part['stockLevel'] < parts_status[order_no]['needed']:
+                parts_status[order_no]['status'] = 'reorder'
+                parts_status[order_no]['status_text'] = "{} needed, {} available. Reorder {} at {}".format(parts_status[order_no]['needed'], parts_status[order_no]['stock'], (parts_status[order_no]['needed'] - parts_status[order_no]['stock']), parts_status[order_no]['distributor'])
+            else:
+                parts_status[order_no]['status'] = 'available'
+                parts_status[order_no]['status_text'] = "{} needed, {} available".format(parts_status[order_no]['needed'], parts_status[order_no]['stock'])
+        print("")
+        for order_no, status in parts_status.items():
+            if status['status'] == 'reorder':
+                print("{}: {}".format(order_no, status['status_text']))
+        print("")
+        for order_no, status in parts_status.items():
+            if status['status'] == 'missing':
+                print("{}: {}".format(order_no, status['status_text']))
+        print("")
+        for order_no, status in parts_status.items():
+            if status['status'] == 'available':
+                print("{}: {}".format(order_no, status['status_text']))
 
 if __name__ == "__main__":
     main()
