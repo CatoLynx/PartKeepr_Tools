@@ -31,7 +31,7 @@ class TME:
         return data
     
     def get_part_prices(self, order_no):
-        data = self.api_call("/Products/GetPrices.json", {"Country": "DE", "Language": "EN", "Currency": "EUR", "GrossPrices": "true", "SymbolList[0]": order_no})
+        data = self.api_call("/Products/GetPrices.json", {"Country": "DE", "Language": "EN", "Currency": "EUR", "SymbolList[0]": order_no})
         return data
     
     def get_part_parameters(self, order_no):
