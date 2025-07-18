@@ -15,4 +15,7 @@ class Mouser:
                 'partSearchOptions': None
             }
         }
-        return requests.post(full_url, params=url_params, json=json).json()
+        resp = requests.post(full_url, params=url_params, json=json)
+        if resp.status_code != 200:
+            return None
+        return resp.json()

@@ -9,4 +9,7 @@ class LCSC:
         full_url = self.base_url + "/wmsc/product/detail"
         url_params = {'productCode': order_no}
         cookies = {'currencyCode': "EUR"}
-        return requests.get(full_url, params=url_params, cookies=cookies).json()
+        resp = requests.get(full_url, params=url_params, cookies=cookies)
+        if resp.status_code != 200:
+            return None
+        return resp.json()

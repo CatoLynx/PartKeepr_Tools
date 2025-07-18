@@ -38,7 +38,8 @@ class DigiKey:
                 'redirect_uri': "https://example.com",
                 'grant_type': 'authorization_code'
             }
-            response = requests.post(self.base_url + "/v1/oauth2/token", data=data).json()
+            resp = requests.post(self.base_url + "/v1/oauth2/token", data=data)
+            response = resp.json()
             if 'access_token' in response:
                 self.auth_data = {
                     'access_token': response['access_token'],
@@ -58,7 +59,8 @@ class DigiKey:
             'refresh_token': self.auth_data['refresh_token'],
             'grant_type': 'refresh_token'
         }
-        response = requests.post(self.base_url + "/v1/oauth2/token", data=data).json()
+        resp = requests.post(self.base_url + "/v1/oauth2/token", data=data)
+        response = resp.json()
         if 'access_token' in response:
             self.auth_data = {
                 'access_token': response['access_token'],
@@ -86,7 +88,10 @@ class DigiKey:
             'X-DIGIKEY-Locale-Currency': 'EUR',
             'X-DIGIKEY-Customer-Id': "0",
         }
-        response = requests.get(self.base_url + url, headers=headers, data=data).json()
+        resp = requests.get(self.base_url + url, headers=headers, data=data)
+        if resp.status_code != 200:
+            return None
+        response = resp.json()
         if 'ErrorMessage' in response and response['ErrorMessage'] in ("Bearer token  expired", "The Bearer token is invalid"):
             success = self.refresh_access_token()
             if not success:

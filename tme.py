@@ -24,7 +24,10 @@ class TME:
         params['Token'] = self.app_key
         signature = self.calculate_signature("POST", full_url, params)
         params['ApiSignature'] = signature
-        return requests.post(full_url, data=params).json()
+        resp = requests.post(full_url, data=params)
+        if resp.status_code != 200:
+            return None
+        return resp.json()
     
     def get_part_details(self, order_no):
         data = self.api_call("/Products/GetProducts.json", {"Country": "DE", "Language": "EN", "SymbolList[0]": order_no})

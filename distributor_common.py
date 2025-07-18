@@ -12,6 +12,9 @@ SUPPORTED_DISTRIBUTORS = {
 def get_part_data(distributor, order_no, tme, mouser, digikey, lcsc):
     if distributor == "TME":
         tme_data = tme.get_part_details(order_no)
+        if tme_data is None:
+            print("        TME Part Details API Error!")
+            return None
         if 'Error' in tme_data:
             print("        TME Part Details API Error: {}".format(tme_data['Status']))
             return None
@@ -19,6 +22,9 @@ def get_part_data(distributor, order_no, tme, mouser, digikey, lcsc):
             tme_data = tme_data['Data']['ProductList'][0]
         
         tme_prices = tme.get_part_prices(order_no)
+        if tme_prices is None:
+            print("        TME Part Prices API Error!")
+            return None
         if 'Error' in tme_prices:
             print("        TME Part Prices API Error: {}".format(tme_prices['Status']))
             return None
@@ -30,6 +36,9 @@ def get_part_data(distributor, order_no, tme, mouser, digikey, lcsc):
             prices.append({'quantity': entry['Amount'], 'price': entry['PriceValue']})
         
         tme_parameters = tme.get_part_parameters(order_no)
+        if tme_parameters is None:
+            print("        TME Part Parameters API Error!")
+            return None
         if 'Error' in tme_parameters:
             print("        TME Part Parameters API Error: {}".format(tme_parameters['Status']))
             return None
@@ -53,6 +62,9 @@ def get_part_data(distributor, order_no, tme, mouser, digikey, lcsc):
         return part_data
     elif distributor == "Mouser":
         mouser_data = mouser.get_part_details(order_no)
+        if mouser_data is None:
+            print("        Mouser Part Details API Error!")
+            return None
         if mouser_data['Errors']:
             print("        Mouser Part Details API Error!")
             pprint(mouser_data['Errors'])
@@ -78,6 +90,9 @@ def get_part_data(distributor, order_no, tme, mouser, digikey, lcsc):
         return part_data
     elif distributor == "Digi-Key":
         digikey_data = digikey.get_part_details(order_no)
+        if digikey_data is None:
+            print("        Digi-Key Part Details API Error!")
+            return None
         if 'ErrorMessage' in digikey_data:
             print("        Digi-Key Part Details API Error: {}".format(digikey_data['ErrorMessage']))
             return None
@@ -112,6 +127,9 @@ def get_part_data(distributor, order_no, tme, mouser, digikey, lcsc):
         return part_data
     elif distributor == "LCSC":
         lcsc_data = lcsc.get_part_details(order_no)
+        if lcsc_data is None:
+            print("        LCSC Part Details API Error!")
+            return None
         if lcsc_data['code'] != 200:
             print("        LCSC Part Details API Error: {}".format(lcsc_data['msg']))
             return None
